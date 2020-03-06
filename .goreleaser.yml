@@ -1,0 +1,34 @@
+project_name: go-context-logger
+env:
+- LABEL_DOMAIN=github.trevinteacutter
+- CGO_ENABLED=0
+builds:
+- binary: "{{.ProjectName}}"
+  main: ./cmd/main.go
+  ldflags:
+  - -s -w
+  - -X github.com/trevinteacutter/pkg/logger/build.Build={{.Version}}
+  - -X github.com/trevinteacutter/pkg/logger/build.Commit={{.FullCommit}}
+  - -X github.com/trevinteacutter/pkg/logger/build.Date={{.Date}}
+  - -X github.com/trevinteacutter/pkg/logger/build.Version={{.Env.GOVERSION}}
+  - -X github.com/trevinteacutter/pkg/logger/build.Program={{.Binary}}
+  - -X github.com/trevinteacutter/pkg/logger/build.Os={{.Os}}
+  - -X github.com/trevinteacutter/pkg/logger/build.Arch={{.Arch}}
+  - -X github.com/trevinteacutter/pkg/logger/build.Arm={{.Arm}}
+  ignore:
+  - goos: darwin
+    goarch: 386
+signs:
+- artifacts: all
+changelog:
+  sort: asc
+  filters:
+    exclude:
+    - "^docs:"
+    - "^values:"
+    - typo
+release:
+  github:
+    owner: trevinteacutter
+    name: go-context-logger
+  prerelease: auto

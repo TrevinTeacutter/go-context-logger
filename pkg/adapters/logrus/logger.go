@@ -5,41 +5,79 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/trevinteacutter/go-context-logger/pkg/logger"
+	"github.com/trevinteacutter/go-context-logger/pkg/logs"
 )
 
-var (
-	// nolint: gochecknoglobals
-	globalLogger = logrus.New()
-)
+var _ logs.Logger = (*Logger)(nil)
 
-// ConfigureAdapter is meant to setup the logrus logging adapter, however it only ever be called once for an application
-func ConfigureAdapter(configuration logger.Configuration, baseLogger *logrus.Logger) {
-	switch baseLogger {
-	case nil:
-		globalLogger = logrus.StandardLogger()
-	default:
-		globalLogger = baseLogger
+type Logger struct {
+	logger  *logrus.Entry
+	configuration logs.Configuration
+	context logs.Context
+}
+
+func CreateLogger(baseLogger *logrus.Logger) *Logger {
+	baseLogger.SetOutput(os.Stdout)
+	baseLogger.SetReportCaller(true)
+
+	return &Logger{
+		logger: logrus.NewEntry(baseLogger),
 	}
 
-	globalLogger.SetOutput(os.Stdout)
-	globalLogger.SetReportCaller(true)
+}
+
+func (logger *Logger) Error(err error, message string) {
+	logger.logger.WithFields(logger.loggerFields()).WithError(err).Error(message)
+}
+
+func (logger *Logger) Log(message string) {
+	logger.logger.WithFields(logger.loggerFields()).Info(message)
+}
+
+func (logger *Logger) Verbose(message string) {
+	logger.logger.WithFields(logger.loggerFields()).Trace(message)
+}
+
+func (logger *Logger) ErrorWithContext(err error, message string, ctx logs.Context) {
+	logger.logger.WithFields(logger.loggerFields()).WithFields(logger.contextFields(ctx)).WithError(err).Error(message)
+}
+
+func (logger *Logger) LogWithContext(message string, ctx logs.Context) {
+	logger.logger.WithFields(logger.loggerFields()).WithFields(logger.contextFields(ctx)).Info(message)
+}
+
+func (logger *Logger) VerboseWithContext(message string, ctx logs.Context) {
+	logger.logger.WithFields(logger.loggerFields()).WithFields(logger.contextFields(ctx)).Trace(message)
+}
+
+func (logger *Logger) loggerFields() map[string]interface{} {
+	return logger.context.Fields(logger.configuration.Verbose, logger.configuration.Flatten, logger.configuration.Separator)
+}
+
+func (logger *Logger) contextFields(ctx logs.Context) map[string]interface{} {
+	return ctx.Fields(logger.configuration.Verbose, logger.configuration.Flatten, logger.configuration.Separator)
+}
+
+func (logger *Logger) WithConfiguration(configuration logs.Configuration) logs.Logger {
+	newLogger := CreateLogger(logger.logger.Logger)
+
+	newLogger.configuration = configuration
 
 	switch configuration.Verbose {
 	case true:
-		globalLogger.SetLevel(logrus.InfoLevel)
+		newLogger.logger.Logger.SetLevel(logrus.InfoLevel)
 	default:
-		globalLogger.SetLevel(logrus.TraceLevel)
+		newLogger.logger.Logger.SetLevel(logrus.TraceLevel)
 	}
 
 	switch configuration.Format {
 	case "text":
-		globalLogger.SetFormatter(&logrus.TextFormatter{
+		newLogger.logger.Logger.SetFormatter(&logrus.TextFormatter{
 			DisableLevelTruncation: true,
 			QuoteEmptyFields:       true,
 		})
 	case "prettyjson":
-		globalLogger.SetFormatter(&logrus.JSONFormatter{
+		newLogger.logger.Logger.SetFormatter(&logrus.JSONFormatter{
 			FieldMap: logrus.FieldMap{
 				logrus.FieldKeyMsg:  configuration.MessageKey,
 				logrus.FieldKeyFunc: "function",
@@ -47,48 +85,21 @@ func ConfigureAdapter(configuration logger.Configuration, baseLogger *logrus.Log
 			PrettyPrint: true,
 		})
 	default:
-		globalLogger.SetFormatter(&logrus.JSONFormatter{
+		newLogger.logger.Logger.SetFormatter(&logrus.JSONFormatter{
 			FieldMap: logrus.FieldMap{
 				logrus.FieldKeyMsg:  configuration.MessageKey,
 				logrus.FieldKeyFunc: "function",
 			},
 		})
 	}
+
+	return newLogger
 }
 
-type Logger struct {
-	logger *logrus.Entry
-}
+func (logger *Logger) WithBaseContext(context logs.Context) logs.Logger {
+	newLogger := CreateLogger(logger.logger.Logger)
 
-func CreateLogger() *Logger {
-	return &Logger{
-		logger: logrus.NewEntry(globalLogger),
-	}
-}
+	newLogger.context = context
 
-func (logger *Logger) Error(message interface{}) {
-	logger.logger.Error(message)
-}
-
-func (logger *Logger) Log(message interface{}) {
-	logger.logger.Info(message)
-}
-
-func (logger *Logger) Trace(message interface{}) {
-	logger.logger.Trace(message)
-}
-
-func (logger *Logger) ErrorWithContext(message interface{}, ctx *logger.Context) {
-	fields := ctx.GetFields()
-	logger.logger.WithFields(fields).Error(message)
-}
-
-func (logger *Logger) LogWithContext(message interface{}, ctx *logger.Context) {
-	fields := ctx.GetFields()
-	logger.logger.WithFields(fields).Info(message)
-}
-
-func (logger *Logger) TraceWithContext(message interface{}, ctx *logger.Context) {
-	fields := ctx.GetFields()
-	logger.logger.WithFields(fields).Trace(message)
+	return newLogger
 }

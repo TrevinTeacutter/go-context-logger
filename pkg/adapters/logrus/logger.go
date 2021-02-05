@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/label"
 
 	"github.com/trevinteacutter/go-context-logger/pkg/logs"
 )
@@ -12,8 +13,8 @@ var _ logs.Logger = (*Logger)(nil)
 
 type Logger struct {
 	logger  *logrus.Entry
-	configuration logs.Configuration
-	context logs.Context
+	configuration Configuration
+	labels []label.KeyValue
 }
 
 func CreateLogger(baseLogger *logrus.Logger) *Logger {
@@ -27,38 +28,50 @@ func CreateLogger(baseLogger *logrus.Logger) *Logger {
 }
 
 func (logger *Logger) Error(err error, message string) {
-	logger.logger.WithFields(logger.loggerFields()).WithError(err).Error(message)
+	labelsToFields(logger.logger, logger.labels...).WithError(err).Error(message)
 }
 
 func (logger *Logger) Log(message string) {
-	logger.logger.WithFields(logger.loggerFields()).Info(message)
+	labelsToFields(logger.logger, logger.labels...).Info(message)
 }
 
 func (logger *Logger) Verbose(message string) {
-	logger.logger.WithFields(logger.loggerFields()).Trace(message)
+	labelsToFields(logger.logger, logger.labels...).Debug(message)
 }
 
-func (logger *Logger) ErrorWithContext(err error, message string, ctx logs.Context) {
-	logger.logger.WithFields(logger.loggerFields()).WithFields(logger.contextFields(ctx)).WithError(err).Error(message)
+func (logger *Logger) ErrorWithLabels(err error, message string, labels ...label.KeyValue) {
+	temp := labelsToFields(logger.logger, logger.labels...)
+
+	temp = labelsToFields(temp, labels...)
+
+	temp.WithError(err).Error(message)
 }
 
-func (logger *Logger) LogWithContext(message string, ctx logs.Context) {
-	logger.logger.WithFields(logger.loggerFields()).WithFields(logger.contextFields(ctx)).Info(message)
+func (logger *Logger) LogWithLabels(message string, labels ...label.KeyValue) {
+	temp := labelsToFields(logger.logger, logger.labels...)
+
+	temp = labelsToFields(temp, labels...)
+
+	temp.Info(message)
 }
 
-func (logger *Logger) VerboseWithContext(message string, ctx logs.Context) {
-	logger.logger.WithFields(logger.loggerFields()).WithFields(logger.contextFields(ctx)).Trace(message)
+func (logger *Logger) VerboseWithLabels(message string, labels ...label.KeyValue) {
+	temp := labelsToFields(logger.logger, logger.labels...)
+
+	temp = labelsToFields(temp, labels...)
+
+	temp.Debug(message)
 }
 
-func (logger *Logger) loggerFields() map[string]interface{} {
-	return logger.context.Fields(logger.configuration.Verbose, logger.configuration.Flatten, logger.configuration.Separator)
+func labelsToFields(logger *logrus.Entry, labels ...label.KeyValue) *logrus.Entry {
+	for _, field := range labels {
+		logger = logger.WithField(string(field.Key), field.Value.Emit())
+	}
+
+	return logger
 }
 
-func (logger *Logger) contextFields(ctx logs.Context) map[string]interface{} {
-	return ctx.Fields(logger.configuration.Verbose, logger.configuration.Flatten, logger.configuration.Separator)
-}
-
-func (logger *Logger) WithConfiguration(configuration logs.Configuration) logs.Logger {
+func (logger *Logger) WithConfiguration(configuration Configuration) logs.Logger {
 	newLogger := CreateLogger(logger.logger.Logger)
 
 	newLogger.configuration = configuration
@@ -96,10 +109,10 @@ func (logger *Logger) WithConfiguration(configuration logs.Configuration) logs.L
 	return newLogger
 }
 
-func (logger *Logger) WithBaseContext(context logs.Context) logs.Logger {
+func (logger *Logger) WithBaseLabels(labels ...label.KeyValue) logs.Logger {
 	newLogger := CreateLogger(logger.logger.Logger)
 
-	newLogger.context = context
+	newLogger.labels = append(newLogger.labels, labels...)
 
 	return newLogger
 }

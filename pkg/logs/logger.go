@@ -1,22 +1,89 @@
 package logs
 
 import (
-	"go.opentelemetry.io/otel/label"
+	"os"
+	"sync"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
-type Logger interface {
-	// Error is equivalent to logging with error level
-	Error(err error, message string)
-	// Log is equivalent to logging with info level
-	Log(message string)
-	// Log is equivalent to logging with debug/verbose level
-	Verbose(message string)
-	// ErrorWithLabels is equivalent to logging with error level, but includes the given context
-	ErrorWithLabels(err error, message string, labels ...label.KeyValue)
-	// LogWithLabels is equivalent to logging with info level, but includes the given context
-	LogWithLabels(message string, labels ...label.KeyValue)
-	// VerboseWithLabels is equivalent to logging with debug/verbose level, but includes the given context
-	VerboseWithLabels(message string, labels ...label.KeyValue)
-	// WithBaseLabels
-	WithBaseLabels(labels ...label.KeyValue) Logger
+const (
+	MetaFieldKeyPrefix = "meta"
+	NameFieldKey       = MetaFieldKeyPrefix + ".name"
+	PackageFieldKey    = MetaFieldKeyPrefix + ".package"
+	TypeFieldKey       = MetaFieldKeyPrefix + ".type"
+)
+
+var (
+	initializer sync.Once
+
+	singleton *Logger
+)
+
+func GetLogger() *Logger {
+	initializer.Do(func() {
+		singleton = &Logger{
+			root: Route{
+				Children: []Route{
+					{
+						Matchers: []Matcher{
+							&AttributeMatcher{
+								Key:      "level",
+								Operator: "NOT_EQUALS",
+								Value:    attribute.StringValue("debug"),
+							},
+						},
+						Receiver: &StandardReceiver{
+							Encoder:   &TextEncoder{},
+							Writer:    os.Stdout,
+							Delimiter: '\n',
+						},
+					},
+				},
+				Receiver: &NoopReceiver{},
+			},
+		}
+	})
+
+	return singleton
+}
+
+type Logger struct {
+	root Route
+}
+
+func (l *Logger) Error(err error, attributes ...attribute.KeyValue) {
+	log := Log{
+		Message:    err.Error(),
+		Attributes: append(attributes, attribute.String("level", "error")),
+	}
+	receivers := l.root.Route(log)
+
+	for _, receiver := range receivers {
+		_ = receiver.Receive(log)
+	}
+}
+
+func (l *Logger) Log(message string, attributes ...attribute.KeyValue) {
+	log := Log{
+		Message:    message,
+		Attributes: append(attributes, attribute.String("level", "info")),
+	}
+	receivers := l.root.Route(log)
+
+	for _, receiver := range receivers {
+		_ = receiver.Receive(log)
+	}
+}
+
+func (l *Logger) Verbose(message string, attributes ...attribute.KeyValue) {
+	log := Log{
+		Message:    message,
+		Attributes: append(attributes, attribute.String("level", "debug")),
+	}
+	receivers := l.root.Route(log)
+
+	for _, receiver := range receivers {
+		_ = receiver.Receive(log)
+	}
 }
